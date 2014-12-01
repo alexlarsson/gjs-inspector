@@ -52,12 +52,17 @@ struct _GtkInspectorInteractivePrivate
 enum {
   PROP_0,
   PROP_OBJECT,
+  PROP_TITLE,
   LAST_PROP
 };
 
 static GParamSpec *param_specs [LAST_PROP];
 
-G_DEFINE_TYPE_WITH_PRIVATE (GtkInspectorInteractive, gtk_inspector_interactive, GTK_TYPE_BOX)
+G_DEFINE_DYNAMIC_TYPE_EXTENDED (GtkInspectorInteractive,
+                                gtk_inspector_interactive,
+                                GTK_TYPE_BOX,
+                                0,
+                                G_ADD_PRIVATE_DYNAMIC(GtkInspectorInteractive))
 
 static void error_reporter(JSContext *cx, const char *message, JSErrorReport *report);
 static JSBool gtk_inspector_interactive_print (JSContext *context,
@@ -433,6 +438,10 @@ gtk_inspector_interactive_get_property (GObject    *object,
       g_value_set_object (value, interactive->priv->object);
       break;
 
+    case PROP_TITLE:
+      g_value_set_string (value, "Interactive");
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
     }
@@ -459,6 +468,11 @@ gtk_inspector_interactive_set_property (GObject      *object,
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
     }
+}
+
+static void
+gtk_inspector_interactive_class_finalize (GtkInspectorInteractiveClass *klass)
+{
 }
 
 static void
@@ -494,6 +508,14 @@ gtk_inspector_interactive_class_init (GtkInspectorInteractiveClass *klass)
                          (GParamFlags)(G_PARAM_READWRITE |
                                        G_PARAM_STATIC_STRINGS));
 
+  param_specs [PROP_TITLE] =
+    g_param_spec_object ("title",
+                         _("Title"),
+                         _("Tab title."),
+                         G_TYPE_STRING,
+                         (GParamFlags)(G_PARAM_READABLE |
+                                       G_PARAM_STATIC_STRINGS));
+
   signals[MOVE_HISTORY] =
     g_signal_new ("move-history",
                   G_TYPE_FROM_CLASS (klass),
@@ -523,5 +545,14 @@ gtk_inspector_interactive_grab_focus (GtkInspectorInteractive *interactive)
   gtk_widget_grab_focus (GTK_WIDGET (interactive->priv->entry));
 }
 
+void
+gtk_inspector_interactive_register (GTypeModule *module)
+{
+  gtk_inspector_interactive_register_type (module);
+  g_io_extension_point_implement ("gtk-inspector-page",
+                                  GTK_TYPE_INSPECTOR_INTERACTIVE,
+                                  "interactive",
+                                  10);
+}
 
 // vim: set et sw=2 ts=2:

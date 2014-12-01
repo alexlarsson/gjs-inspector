@@ -51,6 +51,9 @@ GType      gtk_inspector_interactive_get_type   (void);
 void
 gtk_inspector_interactive_grab_focus (GtkInspectorInteractive *interactive);
 
+void
+gtk_inspector_interactive_register (GTypeModule *module);
+
 G_END_DECLS
 
 #endif // _GTK_INSPECTOR_INTERACTIVE_H_

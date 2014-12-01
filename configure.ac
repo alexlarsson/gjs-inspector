@@ -30,7 +30,6 @@ AC_HEADER_STDC
 AM_DISABLE_STATIC
 # avoid libtool for LTCOMPILE, use it only to link
 AC_PROG_LIBTOOL
-dnl DOLT
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
@@ -38,11 +37,15 @@ AC_C_CONST
 GNOME_CXX_WARNINGS([maximum])
 GNOME_MAINTAINER_MODE_DEFINES
 
+AC_PATH_PROG(GIO_QUERYMODULES, gio-querymodules, no)
+
 PKG_CHECK_MODULES([INSPECTOR], [gtk+-3.0 gjs-1.0])
 
 GLIB_GSETTINGS
 GLIB_COMPILE_RESOURCES=`$PKG_CONFIG --variable glib_compile_resources gio-2.0`
 AC_SUBST(GLIB_COMPILE_RESOURCES)
+GTK_BINARY_VERSION=`$PKG_CONFIG --variable gtk_binary_version gtk+-3.0`
+AC_SUBST(GTK_BINARY_VERSION)
 
 dnl automake 1.11/1.12 defines this but does not substitute it
 AC_SUBST([pkglibexecdir], ["${libexecdir}/${PACKAGE}"])
