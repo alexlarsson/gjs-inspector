@@ -127,6 +127,7 @@ gtk_inspector_interactive_finalize (GObject *object)
 {
   GtkInspectorInteractive *interactive = GTK_INSPECTOR_INTERACTIVE (object);
 
+  g_clear_object (&interactive->priv->object);
   g_clear_object (&interactive->priv->context);
   g_clear_pointer (&interactive->priv->saved_text, g_free);
   g_queue_free_full (interactive->priv->history, g_free);
@@ -507,14 +508,18 @@ gtk_inspector_interactive_class_init (GtkInspectorInteractiveClass *klass)
                          G_TYPE_OBJECT,
                          (GParamFlags)(G_PARAM_READWRITE |
                                        G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (object_class, PROP_OBJECT,
+                                   param_specs [PROP_OBJECT]);
 
   param_specs [PROP_TITLE] =
-    g_param_spec_object ("title",
+    g_param_spec_string ("title",
                          _("Title"),
                          _("Tab title."),
-                         G_TYPE_STRING,
+                         NULL,
                          (GParamFlags)(G_PARAM_READABLE |
                                        G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (object_class, PROP_TITLE,
+                                   param_specs [PROP_TITLE]);
 
   signals[MOVE_HISTORY] =
     g_signal_new ("move-history",
