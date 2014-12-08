@@ -35,6 +35,7 @@ struct _GtkInspectorInteractivePrivate
   GtkScrolledWindow *scrolled_window;
   GtkEntry *entry;
   GtkLabel *label;
+  GtkLabel *completion_label;
   GtkBox *label_box;
   GjsContext *context;
 
@@ -52,6 +53,8 @@ struct _GtkInspectorInteractivePrivate
 enum {
   PROP_0,
   PROP_OBJECT,
+  PROP_COMPLETION_LABEL,
+  PROP_ENTRY,
   PROP_TITLE,
   LAST_PROP
 };
@@ -72,6 +75,7 @@ static JSBool gtk_inspector_interactive_print (JSContext *context,
 #define HISTORY_LENGTH 30
 
 enum {
+  COMPLETE,
   MOVE_HISTORY,
   LAST_SIGNAL
 };
@@ -79,13 +83,9 @@ enum {
 static guint signals[LAST_SIGNAL] = { 0 };
 
 static const char *init_js_code =
-  "window.GLib = imports.gi.GLib;\n"
-  "window.GObject = imports.gi.GObject;\n"
-  "window.Gio = imports.gi.Gio;\n"
-  "window.Pango = imports.gi.Pango;\n"
-  "window.Cairo = imports.cairo;\n"
-  "window.Gtk = imports.gi.Gtk;\n"
-  ;
+  "window.__complete = imports.inspector.repl.complete;\n"
+  "window.__eval = imports.inspector.repl.eval_line;\n"
+  "window.__foo = imports.gi.Gtk;\n";
 
 static JSFunctionSpec global_funcs[] = {
     { "print", JSOP_WRAPPER (gtk_inspector_interactive_print), 0, GJS_MODULE_PROP_FLAGS },
@@ -97,6 +97,7 @@ gtk_inspector_interactive_init (GtkInspectorInteractive *interactive)
 {
   JSContext *context;
   JSObject *global;
+  const char *search_path[] = { "resource:///org/gnome/gjs-inspector/js", NULL };
 
   interactive->priv = (GtkInspectorInteractivePrivate*)gtk_inspector_interactive_get_instance_private (interactive);
   gtk_widget_init_template (GTK_WIDGET (interactive));
@@ -104,7 +105,9 @@ gtk_inspector_interactive_init (GtkInspectorInteractive *interactive)
 
   interactive->priv->buffer = g_string_new ("");
 
-  interactive->priv->context = gjs_context_new ();
+  interactive->priv->context = (GjsContext *)g_object_new (GJS_TYPE_CONTEXT,
+                                                           "search-path", search_path,
+                                                           NULL);
   g_object_set_data (G_OBJECT (interactive->priv->context), "interactive", interactive);
   JS_SetErrorReporter ((JSContext *)gjs_context_get_native_context (interactive->priv->context), error_reporter);
 
@@ -113,13 +116,20 @@ gtk_inspector_interactive_init (GtkInspectorInteractive *interactive)
 
   JSAutoCompartment ac(context, global);
   JSAutoRequest ar(context);
+  jsval inspector;
 
   if (!JS_DefineFunctions(context, global, &global_funcs[0]))
     g_error("Failed to define properties on the global object");
 
+  inspector.setObject(*gjs_object_from_g_object (context, G_OBJECT (interactive)));
+
   gjs_context_eval (interactive->priv->context,
-                    init_js_code, -1, "<interactive>",
+                    init_js_code, -1, "<init>",
                     NULL, NULL);
+
+  if (!JS_SetProperty(context, global, "__inspector", &inspector))
+    g_error("Failed to define properties on the global object");
+
 }
 
 static void
@@ -226,21 +236,20 @@ gtk_inspector_interactive_print (JSContext *context,
                                  jsval     *vp)
 {
   GjsContext *gjs_context = (GjsContext *) JS_GetContextPrivate (context);
-    GtkInspectorInteractive *interactive;
-    jsval *argv = JS_ARGV(context, vp);
-    char *buffer;
+  GtkInspectorInteractive *interactive;
+  jsval *argv = JS_ARGV(context, vp);
+  char *buffer;
 
-    if (!gjs_print_parse_args(context, argc, argv, &buffer)) {
-        return FALSE;
-    }
+  if (!gjs_print_parse_args(context, argc, argv, &buffer))
+    return FALSE;
 
-    interactive = GTK_INSPECTOR_INTERACTIVE (g_object_get_data (G_OBJECT (gjs_context), "interactive"));
+  interactive = GTK_INSPECTOR_INTERACTIVE (g_object_get_data (G_OBJECT (gjs_context), "interactive"));
 
-    gtk_inspector_interactive_add_line (interactive, buffer);
-    g_free (buffer);
+  gtk_inspector_interactive_add_line (interactive, buffer);
+  g_free (buffer);
 
-    JS_SET_RVAL (context, vp, JSVAL_VOID);
-    return JS_TRUE;
+  JS_SET_RVAL (context, vp, JSVAL_VOID);
+  return JS_TRUE;
 }
 
 static void
@@ -260,6 +269,9 @@ error_reporter(JSContext *cx, const char *message, JSErrorReport *report)
     return;
   }
 
+  if (strcmp (report->filename, "<init>") == 0)
+    return;
+
   line = g_string_new ("");
   if (report->filename)
     g_string_append_printf (line, "%s:", report->filename);
@@ -276,6 +288,7 @@ error_reporter(JSContext *cx, const char *message, JSErrorReport *report)
   g_string_free (line, TRUE);
 }
 
+
 static void
 entry_activated (GtkEntry *entry,
                  GtkInspectorInteractive *interactive)
@@ -286,7 +299,7 @@ entry_activated (GtkEntry *entry,
   const gchar *text;
   int exit_status;
   GError *error;
-  jsval retval;
+  jsval arg1, retval, func;
   char *str;
 
   text = gtk_entry_get_text (entry);
@@ -317,9 +330,14 @@ entry_activated (GtkEntry *entry,
   else
     {
       error = NULL;
-      if (!gjs_eval_with_scope (context, object,
-                                interactive->priv->buffer->str, interactive->priv->buffer->len,
-                                "<interactive>", &retval))
+
+      if (!gjs_string_from_utf8 (context, interactive->priv->buffer->str, -1, &arg1))
+        g_error ("Failed to convert text to js");
+
+      if (!JS_GetProperty(context, global, "__eval", &func))
+        g_error ("No __eval");
+      else if (!JS_CallFunctionValue (context, object, func, 1,
+                                      &arg1, &retval))
         {
           if (JS_GetPendingException (context, &retval)) {
             str = gjs_value_debug_string (context, retval);
@@ -341,13 +359,58 @@ entry_activated (GtkEntry *entry,
             }
         }
 
-
       g_string_set_size (interactive->priv->buffer, 0);
       gtk_label_set_text (interactive->priv->label, "» ");
     }
 
   interactive->priv->history_current = NULL;
   gtk_entry_set_text (entry, "");
+}
+
+static void
+complete (GtkInspectorInteractive *interactive)
+{
+  JSContext *context;
+  JSObject *global;
+  JSObject *object;
+  const gchar *text;
+  int exit_status;
+  GError *error;
+  jsval retval, func;
+  jsval arg1;
+  char *str;
+
+  text = gtk_entry_get_text (interactive->priv->entry);
+
+  context = (JSContext *)gjs_context_get_native_context (interactive->priv->context);
+  global = gjs_get_global_object (context);
+
+  JSAutoCompartment ac(context, global);
+  JSAutoRequest ar(context);
+
+  if (interactive->priv->object)
+    object = gjs_object_from_g_object (context, G_OBJECT (interactive->priv->object));
+  else
+    object = NULL;
+
+  if (!gjs_string_from_utf8 (context, text, -1, &arg1))
+    g_error ("Failed to convert text to js");
+
+  if (!JS_GetProperty(context, global, "__complete", &func))
+    g_error ("No __complete");
+  else if (!JS_CallFunctionValue (context, object, func, 1,
+                                  &arg1, &retval))
+    {
+      if (JS_GetPendingException (context, &retval)) {
+        str = gjs_value_debug_string (context, retval);
+        if (str)
+          {
+            gtk_inspector_interactive_add_line (interactive, str);
+            g_free (str);
+          }
+      }
+      JS_ClearPendingException(context);
+    }
 }
 
 static void
@@ -439,6 +502,14 @@ gtk_inspector_interactive_get_property (GObject    *object,
       g_value_set_object (value, interactive->priv->object);
       break;
 
+    case PROP_COMPLETION_LABEL:
+      g_value_set_object (value, interactive->priv->completion_label);
+      break;
+
+    case PROP_ENTRY:
+      g_value_set_object (value, interactive->priv->entry);
+      break;
+
     case PROP_TITLE:
       g_value_set_string (value, "Interactive");
       break;
@@ -491,10 +562,12 @@ gtk_inspector_interactive_class_init (GtkInspectorInteractiveClass *klass)
   object_class->set_property = gtk_inspector_interactive_set_property;
 
   klass->move_history = move_history;
+  klass->complete = complete;
 
-  gtk_widget_class_set_template_from_resource (widget_class, "/org/gnome/gjs/inspector/interactive.ui");
+  gtk_widget_class_set_template_from_resource (widget_class, "/org/gnome/gjs-inspector/interactive.ui");
   gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorInteractive, entry);
   gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorInteractive, label);
+  gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorInteractive, completion_label);
   gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorInteractive, label_box);
   gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorInteractive, scrolled_window);
 
@@ -511,6 +584,26 @@ gtk_inspector_interactive_class_init (GtkInspectorInteractiveClass *klass)
   g_object_class_install_property (object_class, PROP_OBJECT,
                                    param_specs [PROP_OBJECT]);
 
+  param_specs [PROP_COMPLETION_LABEL] =
+    g_param_spec_object ("completion-label",
+                         _("Completion label"),
+                         _("Completion label."),
+                         GTK_TYPE_LABEL,
+                         (GParamFlags)(G_PARAM_READABLE |
+                                       G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (object_class, PROP_COMPLETION_LABEL,
+                                   param_specs [PROP_COMPLETION_LABEL]);
+
+  param_specs [PROP_ENTRY] =
+    g_param_spec_object ("entry",
+                         _("entry"),
+                         _("Entry."),
+                         GTK_TYPE_ENTRY,
+                         (GParamFlags)(G_PARAM_READABLE |
+                                       G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (object_class, PROP_ENTRY,
+                                   param_specs [PROP_ENTRY]);
+
   param_specs [PROP_TITLE] =
     g_param_spec_string ("title",
                          _("Title"),
@@ -520,6 +613,17 @@ gtk_inspector_interactive_class_init (GtkInspectorInteractiveClass *klass)
                                        G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (object_class, PROP_TITLE,
                                    param_specs [PROP_TITLE]);
+
+
+  signals[COMPLETE] =
+    g_signal_new ("complete",
+                  G_TYPE_FROM_CLASS (klass),
+                  (GSignalFlags) (G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION),
+                  G_STRUCT_OFFSET (GtkInspectorInteractiveClass, complete),
+                  NULL, NULL,
+                  g_cclosure_marshal_VOID__VOID,
+                  G_TYPE_NONE,
+                  0);
 
   signals[MOVE_HISTORY] =
     g_signal_new ("move-history",
@@ -533,6 +637,11 @@ gtk_inspector_interactive_class_init (GtkInspectorInteractiveClass *klass)
                   GTK_TYPE_DIRECTION_TYPE);
 
   binding_set = gtk_binding_set_by_class (klass);
+
+  gtk_binding_entry_add_signal (binding_set,
+                                GDK_KEY_Tab, (GdkModifierType)0,
+                                "complete", 0);
+
   gtk_binding_entry_add_signal (binding_set,
                                 GDK_KEY_Up, (GdkModifierType)0,
                                 "move-history", 1,

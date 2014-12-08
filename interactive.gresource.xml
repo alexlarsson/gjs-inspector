@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
-  <gresource prefix="/org/gnome/gjs/inspector">
+  <gresource prefix="/org/gnome/gjs-inspector">
     <file compressed="true">interactive.ui</file>
+  </gresource>
+  <gresource prefix="/org/gnome/gjs-inspector/js/inspector">
+    <file>jsParse.js</file>
+    <file>repl.js</file>
   </gresource>
 </gresources>

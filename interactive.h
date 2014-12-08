@@ -40,6 +40,7 @@ typedef struct _GtkInspectorInteractiveClass
 {
   GtkBoxClass parent;
 
+  void (*complete)     (GtkInspectorInteractive *interactive);
   void (*move_history) (GtkInspectorInteractive *interactive,
                         GtkDirectionType dir);
 } GtkInspectorInteractiveClass;
