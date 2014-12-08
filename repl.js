@@ -27,8 +27,16 @@ function complete (text)
     }
 }
 
-function eval_line (arg)
+function eval_line (text)
 {
     __inspector.completion_label.hide ();
-    return eval (commandHeader + arg);
+    print ("» " + text)
+    try {
+        let r = eval (commandHeader + text);
+        print (r);
+    }
+    catch (e) {
+        print (e)
+    }
+
 }

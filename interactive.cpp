@@ -32,11 +32,12 @@ extern "C"
 
 struct _GtkInspectorInteractivePrivate
 {
+  gboolean in_init;
   GtkScrolledWindow *scrolled_window;
+  GtkTextView *textview;
   GtkEntry *entry;
   GtkLabel *label;
   GtkLabel *completion_label;
-  GtkBox *label_box;
   GjsContext *context;
 
   GObject *object;
@@ -82,10 +83,15 @@ enum {
 
 static guint signals[LAST_SIGNAL] = { 0 };
 
+/* This lists a bunch of imports in order to initialize these, as they seem
+   to show a bunch of warning during initialization which we want to avoid */
 static const char *init_js_code =
   "window.__complete = imports.inspector.repl.complete;\n"
   "window.__eval = imports.inspector.repl.eval_line;\n"
-  "window.__foo = imports.gi.Gtk;\n";
+  "imports.gi.Gio;\n"
+  "imports.gi.Pango;\n"
+  "const Cairo = imports.cairo;\n"
+  "imports.gi.Gtk;\n";
 
 static JSFunctionSpec global_funcs[] = {
     { "print", JSOP_WRAPPER (gtk_inspector_interactive_print), 0, GJS_MODULE_PROP_FLAGS },
@@ -118,6 +124,8 @@ gtk_inspector_interactive_init (GtkInspectorInteractive *interactive)
   JSAutoRequest ar(context);
   jsval inspector;
 
+  interactive->priv->in_init = TRUE;
+
   if (!JS_DefineFunctions(context, global, &global_funcs[0]))
     g_error("Failed to define properties on the global object");
 
@@ -130,6 +138,7 @@ gtk_inspector_interactive_init (GtkInspectorInteractive *interactive)
   if (!JS_SetProperty(context, global, "__inspector", &inspector))
     g_error("Failed to define properties on the global object");
 
+  interactive->priv->in_init = FALSE;
 }
 
 static void
@@ -156,20 +165,21 @@ static void
 gtk_inspector_interactive_add_line (GtkInspectorInteractive *interactive,
                                     const char *str)
 {
-  GtkAdjustment *vadj;
-  GtkWidget *label = gtk_label_new (str);
+  GtkTextBuffer *buffer;
+  GtkTextIter iter;
+  GtkTextMark *insert_mark;
 
-  gtk_label_set_selectable (GTK_LABEL (label), TRUE);
-  gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
-  gtk_widget_set_halign (label, GTK_ALIGN_START);
-  gtk_widget_set_margin_start (label, 6);
-  gtk_widget_set_margin_end (label, 6);
+  buffer = gtk_text_view_get_buffer (interactive->priv->textview);
+  gtk_text_buffer_get_end_iter (buffer, &iter);
+  gtk_text_buffer_insert (buffer, &iter, str, -1);
+  gtk_text_buffer_get_end_iter (buffer, &iter);
+  gtk_text_buffer_insert (buffer, &iter, "\n", -1);
 
-  gtk_box_pack_start (interactive->priv->label_box, label, FALSE, FALSE, 0);
-  gtk_widget_show (label);
+  insert_mark = gtk_text_buffer_get_insert (buffer);
 
-  vadj = gtk_scrolled_window_get_vadjustment (interactive->priv->scrolled_window);
-  gtk_adjustment_set_value (vadj, gtk_adjustment_get_upper (vadj));
+  gtk_text_buffer_place_cursor (buffer, &iter);
+  gtk_text_view_scroll_to_mark( interactive->priv->textview,
+                                insert_mark, 0.0, TRUE, 0.0, 1.0);
 }
 
 static JSBool
@@ -264,13 +274,13 @@ error_reporter(JSContext *cx, const char *message, JSErrorReport *report)
 
   interactive = GTK_INSPECTOR_INTERACTIVE (g_object_get_data (G_OBJECT (gjs_context), "interactive"));
 
+  if (interactive->priv->in_init)
+    return;
+
   if (!report) {
     gtk_inspector_interactive_add_line (interactive, message);
     return;
   }
-
-  if (strcmp (report->filename, "<init>") == 0)
-    return;
 
   line = g_string_new ("");
   if (report->filename)
@@ -568,8 +578,8 @@ gtk_inspector_interactive_class_init (GtkInspectorInteractiveClass *klass)
   gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorInteractive, entry);
   gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorInteractive, label);
   gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorInteractive, completion_label);
-  gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorInteractive, label_box);
   gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorInteractive, scrolled_window);
+  gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorInteractive, textview);
 
   gtk_widget_class_bind_template_callback (widget_class, entry_activated);
   gtk_widget_class_bind_template_callback (widget_class, cursor_pos_changed);
