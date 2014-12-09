@@ -36,7 +36,7 @@ function complete (text)
     }
 }
 
-function eval_line (text)
+function evalLine (text)
 {
     __inspector.completion_label.hide ();
     print ("» " + text);
@@ -49,5 +49,12 @@ function eval_line (text)
         print ("r(" + offset + ") = <exception " + String(e) + ">");
         evalResults[offset++] = e;
     }
+}
 
+function objectChanged (text)
+{
+    __inspector.completion_label.hide ();
+    print ("» new object selected");
+    print ("r(" + offset + ") = " + String(__inspector.object));
+    evalResults[offset++] = __inspector.object;
 }

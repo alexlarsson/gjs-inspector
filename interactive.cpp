@@ -87,7 +87,8 @@ static guint signals[LAST_SIGNAL] = { 0 };
    to show a bunch of warning during initialization which we want to avoid */
 static const char *init_js_code =
   "window.__complete = imports.inspector.repl.complete;\n"
-  "window.__eval = imports.inspector.repl.eval_line;\n"
+  "window.__eval = imports.inspector.repl.evalLine;\n"
+  "window.__objectChanged = imports.inspector.repl.objectChanged;\n"
   "imports.gi.Gio;\n"
   "imports.gi.Pango;\n"
   "imports.cairo;\n"
@@ -298,6 +299,46 @@ error_reporter(JSContext *cx, const char *message, JSErrorReport *report)
   g_string_free (line, TRUE);
 }
 
+static void
+call (GtkInspectorInteractive *interactive,
+      const char *function,
+      const char *arg)
+{
+  JSContext *context;
+  JSObject *global;
+  jsval func, arg1, retval;
+  char *str;
+
+  context = (JSContext *)gjs_context_get_native_context (interactive->priv->context);
+  global = gjs_get_global_object (context);
+
+  JSAutoCompartment ac(context, global);
+  JSAutoRequest ar(context);
+
+  arg1 = JSVAL_NULL;
+  if (arg != NULL)
+    {
+      if (!gjs_string_from_utf8 (context, arg, -1, &arg1))
+        g_error ("Failed to convert text to js");
+    }
+
+  if (!JS_GetProperty (context, global, function, &func))
+    g_error ("No %s function to call", function);
+  else if (!JS_CallFunctionValue (context, NULL, func, 1,
+                                  &arg1, &retval))
+    {
+      if (JS_GetPendingException (context, &retval)) {
+        str = gjs_value_debug_string (context, retval);
+        if (str)
+          {
+            g_warning (str);
+            g_free (str);
+          }
+      }
+      JS_ClearPendingException(context);
+    }
+}
+
 
 static void
 entry_activated (GtkEntry *entry,
@@ -308,7 +349,6 @@ entry_activated (GtkEntry *entry,
   JSObject *object;
   const gchar *text;
   int exit_status;
-  GError *error;
   jsval arg1, retval, func;
   char *str;
 
@@ -328,46 +368,13 @@ entry_activated (GtkEntry *entry,
   JSAutoCompartment ac(context, global);
   JSAutoRequest ar(context);
 
-  if (interactive->priv->object)
-    object = gjs_object_from_g_object (context, G_OBJECT (interactive->priv->object));
-  else
-    object = NULL;
-
-  if (!JS_BufferIsCompilableUnit (context, object, interactive->priv->buffer->str, interactive->priv->buffer->len))
+  if (!JS_BufferIsCompilableUnit (context, NULL, interactive->priv->buffer->str, interactive->priv->buffer->len))
     {
       gtk_label_set_text (interactive->priv->label, "…");
     }
   else
     {
-      error = NULL;
-
-      if (!gjs_string_from_utf8 (context, interactive->priv->buffer->str, -1, &arg1))
-        g_error ("Failed to convert text to js");
-
-      if (!JS_GetProperty(context, global, "__eval", &func))
-        g_error ("No __eval");
-      else if (!JS_CallFunctionValue (context, object, func, 1,
-                                      &arg1, &retval))
-        {
-          if (JS_GetPendingException (context, &retval)) {
-            str = gjs_value_debug_string (context, retval);
-            if (str)
-              {
-                gtk_inspector_interactive_add_line (interactive, str);
-                g_free (str);
-              }
-          }
-          JS_ClearPendingException(context);
-        }
-      else if (!JSVAL_IS_VOID(retval))
-        {
-          str = gjs_value_debug_string(context, retval);
-          if (str != NULL)
-            {
-              gtk_inspector_interactive_add_line (interactive, str);
-              g_free (str);
-            }
-        }
+      call (interactive, "__eval", interactive->priv->buffer->str);
 
       g_string_set_size (interactive->priv->buffer, 0);
       gtk_label_set_text (interactive->priv->label, "» ");
@@ -398,29 +405,7 @@ complete (GtkInspectorInteractive *interactive)
   JSAutoCompartment ac(context, global);
   JSAutoRequest ar(context);
 
-  if (interactive->priv->object)
-    object = gjs_object_from_g_object (context, G_OBJECT (interactive->priv->object));
-  else
-    object = NULL;
-
-  if (!gjs_string_from_utf8 (context, text, -1, &arg1))
-    g_error ("Failed to convert text to js");
-
-  if (!JS_GetProperty(context, global, "__complete", &func))
-    g_error ("No __complete");
-  else if (!JS_CallFunctionValue (context, object, func, 1,
-                                  &arg1, &retval))
-    {
-      if (JS_GetPendingException (context, &retval)) {
-        str = gjs_value_debug_string (context, retval);
-        if (str)
-          {
-            gtk_inspector_interactive_add_line (interactive, str);
-            g_free (str);
-          }
-      }
-      JS_ClearPendingException(context);
-    }
+  call (interactive, "__complete", text);
 }
 
 static void
@@ -499,6 +484,23 @@ cursor_pos_changed (GtkEntry *entry,
 }
 
 static void
+gtk_inspector_interactive_set_object (GtkInspectorInteractive *interactive,
+                                      GObject *object)
+{
+  GObject *old;
+  jsval func, retval;
+
+  old = interactive->priv->object;
+
+  interactive->priv->object = (GObject *)g_object_ref (object);
+  if (old)
+    g_object_unref (old);
+
+  if (old != object)
+    call (interactive, "__objectChanged", NULL);
+}
+
+static void
 gtk_inspector_interactive_get_property (GObject    *object,
                                         guint       prop_id,
                                         GValue     *value,
@@ -536,15 +538,11 @@ gtk_inspector_interactive_set_property (GObject      *object,
                                         GParamSpec   *pspec)
 {
   GtkInspectorInteractive *interactive = GTK_INSPECTOR_INTERACTIVE (object);
-  GObject *old;
 
   switch (prop_id)
     {
     case PROP_OBJECT:
-      old = interactive->priv->object;
-      interactive->priv->object = (GObject *)g_value_dup_object (value);
-      if (old)
-        g_object_unref (old);
+      gtk_inspector_interactive_set_object (interactive, (GObject *)g_value_get_object (value));
       break;
 
     default:
