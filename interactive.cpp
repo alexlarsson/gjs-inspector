@@ -90,7 +90,7 @@ static const char *init_js_code =
   "window.__eval = imports.inspector.repl.eval_line;\n"
   "imports.gi.Gio;\n"
   "imports.gi.Pango;\n"
-  "const Cairo = imports.cairo;\n"
+  "imports.cairo;\n"
   "imports.gi.Gtk;\n";
 
 static JSFunctionSpec global_funcs[] = {
