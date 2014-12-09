@@ -22,6 +22,7 @@ const JsParse = imports.inspector.jsParse;
 function complete (text)
 {
     let [completions, attrHead] = JsParse.getCompletions(text, commandHeader, null);
+    completions.sort();
     if (completions.length == 0) {
         __inspector.completion_label.hide ();
         __inspector.completion_label.error_bell ();
