@@ -112,6 +112,8 @@ gtk_inspector_interactive_init (GtkInspectorInteractive *interactive)
 
   interactive->priv->buffer = g_string_new ("");
 
+  gtk_label_set_lines (interactive->priv->completion_label, 7);
+
   interactive->priv->context = (GjsContext *)g_object_new (GJS_TYPE_CONTEXT,
                                                            "search-path", search_path,
                                                            NULL);
