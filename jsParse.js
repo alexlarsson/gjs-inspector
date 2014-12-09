@@ -1,5 +1,8 @@
 /* -*- mode: js2; js2-basic-offset: 4; indent-tabs-mode: nil -*- */
 
+const Gir = imports.gi.GIRepository;
+const GObject = imports.gi.GObject;
+
 // Returns a list of potential completions for text. Completions either
 // follow a dot (e.g. foo.ba -> bar) or they are picked from globalCompletionList (e.g. fo -> foo)
 // commandHeader is prefixed on any expression before it is eval'ed.  It will most likely
@@ -134,6 +137,39 @@ function getExpressionOffset(expr, offset) {
     return offset + 1;
 }
 
+function enumerateInfo (info) {
+    let props = [];
+
+    let n = Gir.object_info_get_n_properties(info);
+    for (let i = 0; i < n; i++) {
+        let prop = Gir.object_info_get_property(info, i);
+        props.push (prop.get_name().replace(/-/g, '_'));
+    }
+
+    n = Gir.object_info_get_n_methods(info);
+    for (i = 0; i < n; i++) {
+        let method = Gir.object_info_get_method(info, i);
+        props.push (method.get_name());
+    }
+
+    let parent = Gir.object_info_get_parent(info);
+    if (parent) {
+        props = props.concat(enumerateInfo(parent));
+    }
+
+    return props;
+}
+
+function enumerateGObject (obj) {
+    if (obj === null || obj === undefined ||
+        !obj instanceof GObject.Object) {
+        return [];
+    }
+
+    let info = Gir.Repository.get_default().find_by_gtype(obj);
+    return enumerateInfo (info);
+}
+
 // Things with non-word characters or that start with a number
 // are not accessible via .foo notation and so aren't returned
 function isValidPropertyName(w) {
@@ -172,7 +208,7 @@ function getPropertyNamesFromExpression(expr, commandHeader) {
 
     let propsUnique = {};
     if (typeof obj === 'object'){
-        let allProps = getAllProps(obj);
+        let allProps = getAllProps(obj).concat (enumerateGObject(obj));
         // Get only things we are allowed to complete following a '.'
         allProps = allProps.filter( isValidPropertyName );
 
