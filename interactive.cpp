@@ -57,6 +57,7 @@ enum {
   PROP_COMPLETION_LABEL,
   PROP_ENTRY,
   PROP_TITLE,
+  PROP_USE_PICKER,
   LAST_PROP
 };
 
@@ -528,6 +529,10 @@ gtk_inspector_interactive_get_property (GObject    *object,
       g_value_set_string (value, "Interactive");
       break;
 
+    case PROP_USE_PICKER:
+      g_value_set_boolean (value, TRUE);
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
     }
@@ -623,6 +628,16 @@ gtk_inspector_interactive_class_init (GtkInspectorInteractiveClass *klass)
                                        G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (object_class, PROP_TITLE,
                                    param_specs [PROP_TITLE]);
+
+  param_specs [PROP_USE_PICKER] =
+    g_param_spec_boolean ("use-picker",
+                          _("Use Picker"),
+                          _("Use Picker"),
+                          TRUE,
+                          (GParamFlags)(G_PARAM_READABLE |
+                                        G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (object_class, PROP_USE_PICKER,
+                                   param_specs [PROP_USE_PICKER]);
 
 
   signals[COMPLETE] =
