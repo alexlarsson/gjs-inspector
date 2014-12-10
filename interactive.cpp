@@ -106,6 +106,7 @@ gtk_inspector_interactive_init (GtkInspectorInteractive *interactive)
   JSContext *context;
   JSObject *global;
   const char *search_path[] = { "resource:///org/gnome/gjs-inspector/js", NULL };
+  GjsContext *old_current;
 
   interactive->priv = (GtkInspectorInteractivePrivate*)gtk_inspector_interactive_get_instance_private (interactive);
   gtk_widget_init_template (GTK_WIDGET (interactive));
@@ -114,6 +115,10 @@ gtk_inspector_interactive_init (GtkInspectorInteractive *interactive)
   interactive->priv->buffer = g_string_new ("");
 
   gtk_label_set_lines (interactive->priv->completion_label, 7);
+
+  old_current = gjs_context_get_current ();
+  if (old_current)
+    gjs_context_make_current (NULL);
 
   interactive->priv->context = (GjsContext *)g_object_new (GJS_TYPE_CONTEXT,
                                                            "search-path", search_path,
@@ -143,6 +148,12 @@ gtk_inspector_interactive_init (GtkInspectorInteractive *interactive)
     g_error("Failed to define properties on the global object");
 
   interactive->priv->in_init = FALSE;
+
+  if (old_current != NULL)
+    {
+      gjs_context_make_current (NULL);
+      gjs_context_make_current (old_current);
+    }
 }
 
 static void
@@ -311,9 +322,18 @@ call (GtkInspectorInteractive *interactive,
   JSObject *global;
   jsval func, arg1, retval;
   char *str;
+  GjsContext *old_current;
+
 
   context = (JSContext *)gjs_context_get_native_context (interactive->priv->context);
   global = gjs_get_global_object (context);
+
+  old_current = gjs_context_get_current ();
+  if (old_current != interactive->priv->context)
+    {
+      gjs_context_make_current (NULL);
+      gjs_context_make_current (interactive->priv->context);
+    }
 
   JSAutoCompartment ac(context, global);
   JSAutoRequest ar(context);
@@ -339,6 +359,12 @@ call (GtkInspectorInteractive *interactive,
           }
       }
       JS_ClearPendingException(context);
+    }
+
+  if (old_current != interactive->priv->context)
+    {
+      gjs_context_make_current (NULL);
+      gjs_context_make_current (old_current);
     }
 }
 
