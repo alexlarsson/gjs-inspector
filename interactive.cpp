@@ -282,9 +282,6 @@ error_reporter(JSContext *cx, const char *message, JSErrorReport *report)
 {
   GjsContext *gjs_context = (GjsContext *) JS_GetContextPrivate (cx);
   GtkInspectorInteractive *interactive;
-  int i, j, k, n;
-  char *prefix, *tmp;
-  const char *ctmp;
   GString *line;
 
   interactive = GTK_INSPECTOR_INTERACTIVE (g_object_get_data (G_OBJECT (gjs_context), "interactive"));
@@ -375,11 +372,7 @@ entry_activated (GtkEntry *entry,
 {
   JSContext *context;
   JSObject *global;
-  JSObject *object;
-  const gchar *text;
-  int exit_status;
-  jsval arg1, retval, func;
-  char *str;
+  const char *text;
 
   text = gtk_entry_get_text (entry);
 
@@ -416,23 +409,9 @@ entry_activated (GtkEntry *entry,
 static void
 complete (GtkInspectorInteractive *interactive)
 {
-  JSContext *context;
-  JSObject *global;
-  JSObject *object;
   const gchar *text;
-  int exit_status;
-  GError *error;
-  jsval retval, func;
-  jsval arg1;
-  char *str;
 
   text = gtk_entry_get_text (interactive->priv->entry);
-
-  context = (JSContext *)gjs_context_get_native_context (interactive->priv->context);
-  global = gjs_get_global_object (context);
-
-  JSAutoCompartment ac(context, global);
-  JSAutoRequest ar(context);
 
   call (interactive, "__complete", text);
 }
@@ -517,7 +496,6 @@ gtk_inspector_interactive_set_object (GtkInspectorInteractive *interactive,
                                       GObject *object)
 {
   GObject *old;
-  jsval func, retval;
 
   old = interactive->priv->object;
 

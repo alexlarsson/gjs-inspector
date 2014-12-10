@@ -21,6 +21,7 @@ g_fake_module_init (GFakeModule *module)
 static gboolean
 g_fake_module_load_module (GTypeModule *gmodule)
 {
+  return TRUE;
 }
 
 static void
@@ -31,7 +32,6 @@ g_fake_module_unload_module (GTypeModule *gmodule)
 static void
 g_fake_module_class_init (GFakeModuleClass *class)
 {
-  GObjectClass     *object_class      = G_OBJECT_CLASS (class);
   GTypeModuleClass *type_module_class = G_TYPE_MODULE_CLASS (class);
 
   type_module_class->load    = g_fake_module_load_module;
@@ -49,7 +49,6 @@ main (int argc,
   GtkWidget *window;
   GtkWidget *interactive;
   GTypeModule *module;
-  GIOExtensionPoint *extension_point;
 
   gtk_init (&argc, &argv);
 
@@ -57,7 +56,7 @@ main (int argc,
 
   gtk_window_set_default_size (GTK_WINDOW (window), 800, 600);
 
-  extension_point = g_io_extension_point_register ("gtk-inspector-page");
+  g_io_extension_point_register ("gtk-inspector-page");
 
   module = g_object_new (g_fake_module_get_type (), NULL);
 
