@@ -147,7 +147,7 @@ function enumerateInfo (info) {
     }
 
     n = Gir.object_info_get_n_methods(info);
-    for (i = 0; i < n; i++) {
+    for (let i = 0; i < n; i++) {
         let method = Gir.object_info_get_method(info, i);
         props.push (method.get_name());
     }
@@ -166,8 +166,19 @@ function enumerateGObject (obj) {
         return [];
     }
 
-    let info = Gir.Repository.get_default().find_by_gtype(obj);
-    return enumerateInfo (info);
+    let gtype = obj.constructor.$gtype;
+
+    while (gtype) {
+        let info = Gir.Repository.get_default().find_by_gtype(gtype);
+        if (info)
+            return enumerateInfo (info);
+        if (gtype == GObject.Object.$gtype)
+            gtype = null;
+        else
+            gtype = GObject.type_parent(gtype);
+    }
+
+    return [];
 }
 
 // Things with non-word characters or that start with a number
