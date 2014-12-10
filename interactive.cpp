@@ -294,6 +294,10 @@ error_reporter(JSContext *cx, const char *message, JSErrorReport *report)
     return;
   }
 
+  /* Strict warnings in a repl are just a pain, lets ignore them */
+  if (JSREPORT_IS_WARNING(report->flags) && JSREPORT_IS_STRICT(report->flags))
+    return;
+
   line = g_string_new ("");
   if (report->filename)
     g_string_append_printf (line, "%s:", report->filename);
