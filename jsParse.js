@@ -14,7 +14,7 @@ function getCompletions(text, commandHeader, globalCompletionList) {
     let expr, base;
     let attrHead = '';
     if (globalCompletionList == null) {
-        const keywords = ['true', 'false', 'null', 'new'];
+        const keywords = ['true', 'false', 'null', 'new', 'imports'];
         const windowProperties = Object.getOwnPropertyNames(window).filter(function(a){ return a.charAt(0) != '_' });
         const headerProperties = getDeclaredConstants(commandHeader);
         globalCompletionList = keywords.concat(windowProperties).concat(headerProperties);
@@ -161,15 +161,19 @@ function enumerateInfo (info) {
 }
 
 function enumerateGObject (obj) {
-    if (obj === null || obj === undefined ||
-        !obj instanceof GObject.Object) {
+    if (obj === null || obj === undefined) {
         return [];
     }
+    let gtype = null;
+    if (obj.hasOwnProperty ("$gtype"))
+        gtype = obj.$gtype;
+    else if (obj.constructor.hasOwnProperty ("$gtype"))
+        gtype = obj.constructor.$gtype;
 
-    let gtype = obj.constructor.$gtype;
+    let repo = Gir.Repository.get_default();
 
     while (gtype) {
-        let info = Gir.Repository.get_default().find_by_gtype(gtype);
+        let info = repo.find_by_gtype(gtype);
         if (info)
             return enumerateInfo (info);
         if (gtype == GObject.Object.$gtype)
@@ -180,6 +184,42 @@ function enumerateGObject (obj) {
 
     return [];
 }
+
+function enumerateGIRNamespace (obj) {
+    if (obj === null || obj === undefined ||
+        !obj instanceof GIRepositoryNamespace) {
+        return [];
+    }
+    let props = [];
+    let names = Object.getOwnPropertyNames(obj);
+    let repo = Gir.Repository.get_default();
+    for (let i = 0; i < names.length; i++) {
+        // There seem to be no way to go from GIRepositoryNamespace itself to the
+        // name of the namespace, so we use the namespace of some child that
+        // has information.
+        // unfortunately such a type may not currently exist, but what can you do...
+        let some_type = obj[names[i]];
+        let some_info = null;
+        if (some_type.hasOwnProperty ("$gtype"))
+            some_info = repo.find_by_gtype(some_type);
+        if (some_info) {
+            let ns = some_info.get_namespace();
+            let repo = Gir.Repository.get_default();
+            let n_infos =  repo.get_n_infos(ns);
+            for (let i = 0; i < n_infos; i++) {
+                let info = repo.get_info (ns, i);
+                props.push(info.get_name());
+            }
+            break;
+        }
+    }
+    return props;
+}
+
+function enumerateGIR (obj) {
+    return enumerateGObject (obj).concat (enumerateGIRNamespace (obj));
+}
+
 
 // Things with non-word characters or that start with a number
 // are not accessible via .foo notation and so aren't returned
@@ -219,7 +259,7 @@ function getPropertyNamesFromExpression(expr, commandHeader) {
 
     let propsUnique = {};
     if (typeof obj === 'object'){
-        let allProps = getAllProps(obj).concat (enumerateGObject(obj));
+        let allProps = getAllProps(obj).concat (enumerateGIR(obj));
         // Get only things we are allowed to complete following a '.'
         allProps = allProps.filter( isValidPropertyName );
 
