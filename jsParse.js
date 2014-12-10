@@ -137,56 +137,71 @@ function getExpressionOffset(expr, offset) {
     return offset + 1;
 }
 
-function enumerateInfo (info) {
+function enumerateInfo (info, for_object) {
     let props = [];
 
-    let n = Gir.object_info_get_n_properties(info);
-    for (let i = 0; i < n; i++) {
-        let prop = Gir.object_info_get_property(info, i);
-        props.push (prop.get_name().replace(/-/g, '_'));
+    if (info.get_type() == 7) {
+        let n = 0;
+        if (for_object) {
+            n = Gir.object_info_get_n_properties(info);
+            for (let i = 0; i < n; i++) {
+                let prop = Gir.object_info_get_property(info, i);
+                props.push (prop.get_name().replace(/-/g, '_'));
+            }
+        }
+
+        n = Gir.object_info_get_n_methods(info);
+        for (let i = 0; i < n; i++) {
+            let method = Gir.object_info_get_method(info, i);
+            let flags = Gir.function_info_get_flags (method);
+            if ((for_object && (flags & 1) != 0) ||
+                (!for_object && (flags & 1) != 1))
+                props.push (method.get_name());
+        }
     }
 
-    n = Gir.object_info_get_n_methods(info);
-    for (let i = 0; i < n; i++) {
-        let method = Gir.object_info_get_method(info, i);
-        props.push (method.get_name());
-    }
-
-    let parent = Gir.object_info_get_parent(info);
-    if (parent) {
-        props = props.concat(enumerateInfo(parent));
+    if (for_object) {
+        let parent = Gir.object_info_get_parent(info);
+        if (parent) {
+            props = props.concat(enumerateInfo(parent, for_object));
+        }
     }
 
     return props;
 }
 
 function enumerateGObject (obj) {
-    if (obj === null || obj === undefined) {
+    if (!obj) {
         return [];
     }
     let gtype = null;
+    let for_object = false;
     if (obj.hasOwnProperty ("$gtype"))
         gtype = obj.$gtype;
-    else if (obj.constructor.hasOwnProperty ("$gtype"))
+    else if (obj.constructor.hasOwnProperty ("$gtype")) {
         gtype = obj.constructor.$gtype;
+        for_object = true;
+    }
 
     let repo = Gir.Repository.get_default();
 
-    while (gtype) {
+    while (gtype != null) {
         let info = repo.find_by_gtype(gtype);
-        if (info)
-            return enumerateInfo (info);
-        if (gtype == GObject.Object.$gtype)
+        if (info) {
+            return enumerateInfo (info, for_object);
+        }
+        if (!for_object || gtype == GObject.Object.$gtype) {
             gtype = null;
-        else
+        } else {
             gtype = GObject.type_parent(gtype);
+        }
     }
 
     return [];
 }
 
 function enumerateGIRNamespace (obj) {
-    if (obj === null || obj === undefined ||
+    if (!obj || typeof obj !== 'object' ||
         !obj instanceof GIRepositoryNamespace) {
         return [];
     }
@@ -200,7 +215,7 @@ function enumerateGIRNamespace (obj) {
         // unfortunately such a type may not currently exist, but what can you do...
         let some_type = obj[names[i]];
         let some_info = null;
-        if (some_type.hasOwnProperty ("$gtype"))
+        if (some_type && some_type.hasOwnProperty ("$gtype"))
             some_info = repo.find_by_gtype(some_type);
         if (some_info) {
             let ns = some_info.get_namespace();
@@ -258,8 +273,13 @@ function getPropertyNamesFromExpression(expr, commandHeader) {
     }
 
     let propsUnique = {};
-    if (typeof obj === 'object'){
-        let allProps = getAllProps(obj).concat (enumerateGIR(obj));
+
+    if (typeof obj === 'object' || typeof obj === 'function') {
+        let allProps = [];
+
+        allProps = allProps.concat(getAllProps(obj));
+        allProps = allProps.concat(enumerateGIR(obj));
+
         // Get only things we are allowed to complete following a '.'
         allProps = allProps.filter( isValidPropertyName );
 
@@ -267,6 +287,7 @@ function getPropertyNamesFromExpression(expr, commandHeader) {
         // property so we end up with a unique list of properties
         allProps.map(function(p){ propsUnique[p] = null; });
     }
+
     return Object.keys(propsUnique).sort();
 }
 
