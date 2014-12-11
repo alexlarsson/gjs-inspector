@@ -91,5 +91,9 @@
         <property name="position">2</property>
       </packing>
     </child>
+    <focus-chain>
+      <widget name="entry"/>
+      <widget name="textview"/>
+    </focus-chain>
   </template>
 </interface>
