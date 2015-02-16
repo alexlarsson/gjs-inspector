@@ -16,6 +16,7 @@ var commandHeader =
   "const Gio = imports.gi.Gio;" +
   "const Pango = imports.gi.Pango;" +
   "const Cairo = imports.cairo;" +
+  "const System = imports.system;" +
   "const Gtk = imports.gi.Gtk;" +
   "const r = imports.inspector.repl.getResult;";
 
