@@ -179,6 +179,14 @@ function enumerateGObject (obj, allProps) {
         for_object = true;
     }
 
+    if (for_object) {
+        let params = GObject.Object.list_properties.call(obj);
+        for (let i = 0; i < params.length; i++) {
+            // Canonicalize '-' to '_' in property names
+            allProps.push(params[i].name.replace(/-/g, "_"));
+        }
+    }
+
     let repo = Gir.Repository.get_default();
 
     while (gtype != null) {
