@@ -137,16 +137,14 @@ function getExpressionOffset(expr, offset) {
     return offset + 1;
 }
 
-function enumerateInfo (info, for_object) {
-    let props = [];
-
+function enumerateInfo (info, for_object, allProps) {
     if (info.get_type() == 7) {
         let n = 0;
         if (for_object) {
             n = Gir.object_info_get_n_properties(info);
             for (let i = 0; i < n; i++) {
                 let prop = Gir.object_info_get_property(info, i);
-                props.push (prop.get_name().replace(/-/g, '_'));
+                allProps.push (prop.get_name().replace(/-/g, '_'));
             }
         }
 
@@ -156,23 +154,21 @@ function enumerateInfo (info, for_object) {
             let flags = Gir.function_info_get_flags (method);
             if ((for_object && (flags & 1) != 0) ||
                 (!for_object && (flags & 1) != 1))
-                props.push (method.get_name());
+                allProps.push (method.get_name());
         }
     }
 
     if (for_object) {
         let parent = Gir.object_info_get_parent(info);
         if (parent) {
-            props = props.concat(enumerateInfo(parent, for_object));
+            enumerateInfo(parent, for_object, allProps);
         }
     }
-
-    return props;
 }
 
-function enumerateGObject (obj) {
+function enumerateGObject (obj, allProps) {
     if (!obj) {
-        return [];
+        return;
     }
     let gtype = null;
     let for_object = false;
@@ -188,7 +184,8 @@ function enumerateGObject (obj) {
     while (gtype != null) {
         let info = repo.find_by_gtype(gtype);
         if (info) {
-            return enumerateInfo (info, for_object);
+            enumerateInfo (info, for_object, allProps);
+            return;
         }
         if (!for_object || gtype == GObject.Object.$gtype) {
             gtype = null;
@@ -197,15 +194,14 @@ function enumerateGObject (obj) {
         }
     }
 
-    return [];
+    return;
 }
 
-function enumerateGIRNamespace (obj) {
+function enumerateGIRNamespace (obj, allProps) {
     if (!obj || typeof obj !== 'object' ||
         !obj instanceof GIRepositoryNamespace) {
-        return [];
+        return;
     }
-    let props = [];
     let names = Object.getOwnPropertyNames(obj);
     let repo = Gir.Repository.get_default();
     for (let i = 0; i < names.length; i++) {
@@ -223,18 +219,17 @@ function enumerateGIRNamespace (obj) {
             let n_infos =  repo.get_n_infos(ns);
             for (let i = 0; i < n_infos; i++) {
                 let info = repo.get_info (ns, i);
-                props.push(info.get_name());
+                allProps.push(info.get_name());
             }
             break;
         }
     }
-    return props;
 }
 
-function enumerateGIR (obj) {
-    return enumerateGObject (obj).concat (enumerateGIRNamespace (obj));
+function enumerateGIR (obj, allProps) {
+    enumerateGObject (obj, allProps);
+    enumerateGIRNamespace (obj, allProps);
 }
-
 
 // Things with non-word characters or that start with a number
 // are not accessible via .foo notation and so aren't returned
@@ -244,11 +239,12 @@ function isValidPropertyName(w) {
 
 // To get all properties (enumerable and not), we need to walk
 // the prototype chain ourselves
-function getAllProps(obj) {
+function getJsProps(obj, allProps) {
     if (obj === null || obj === undefined) {
-        return [];
+        return;
     }
-    return Object.getOwnPropertyNames(obj).concat( getAllProps(Object.getPrototypeOf(obj)) );
+    allProps.push.apply(allProps, Object.getOwnPropertyNames(obj));
+    getJsProps(Object.getPrototypeOf(obj), allProps);
 }
 
 // Given a string _expr_, returns all methods
@@ -277,8 +273,8 @@ function getPropertyNamesFromExpression(expr, commandHeader) {
     if (typeof obj === 'object' || typeof obj === 'function') {
         let allProps = [];
 
-        allProps = allProps.concat(getAllProps(obj));
-        allProps = allProps.concat(enumerateGIR(obj));
+        getJsProps(obj, allProps);
+        enumerateGIR(obj, allProps);
 
         // Get only things we are allowed to complete following a '.'
         allProps = allProps.filter( isValidPropertyName );
