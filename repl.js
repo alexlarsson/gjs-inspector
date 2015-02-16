@@ -2,6 +2,8 @@
 
 var evalResults = [];
 var offset = 0;
+var lastComplete = null;
+var printedFull = false;
 
 function getResult (n)
 {
@@ -31,9 +33,20 @@ function complete (text)
         __inspector.completion_label.hide ();
     } else {
         let commonPrefix = JsParse.getCommonPrefix(completions);
-        __inspector.completion_label.set_text(completions.join(", "));
-        __inspector.completion_label.show ();
         __inspector.entry.emit("insert_at_cursor", commonPrefix.slice(attrHead.length));
+        if (text == lastComplete) {
+            __inspector.completion_label.hide ();
+            if (!printedFull)
+                print ("Completions: \n" + completions.join(", "));
+            printedFull = true;
+        } else {
+            __inspector.completion_label.set_text(completions.join(", "));
+            __inspector.completion_label.show ();
+        }
+    }
+    if (text != lastComplete) {
+        lastComplete = text;
+        printedFull = false;
     }
 }
 
